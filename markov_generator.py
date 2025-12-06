@@ -22,45 +22,35 @@ import sys
 import math
 from collections import defaultdict, Counter, deque
 
-# ---------------------------
-# Utility functions
-# ---------------------------
-
-TOKEN_RE = re.compile(r"\w+|[^\w\s]", flags=re.UNICODE)
+# -------------------------
+# Токенизация (только слова, без пунктуации)
+# -------------------------
+WORD_RE = re.compile(r"\w+", flags=re.UNICODE)
 
 def tokenize(text):
-    """Токенизация: возвращает список токенов (сохранена пунктуация).
-    Минимальная нормализация: перевод в lower и замена 'ё'->'е' для русских текстов.
-    Не делаем никаких fancy-normalizations (как просили)."""
-    if text is None:
+    """Возвращает список слов (нижний регистр, 'ё'->'е'), без пунктуации."""
+    if not text:
         return []
-    s = text.strip().lower()
-    s = s.replace("ё", "е")
-    return TOKEN_RE.findall(s)
+    s = text.lower().replace("ё", "е").replace('-\n', '').replace('й', 'й')
+    # извлекаем "слова" - буквы/цифры/подчёрки; это убирает кавычки, скобки, знаки и т.п.
+    return WORD_RE.findall(s)
 
 def detokenize(tokens):
-    """Склеивание токенов в аккуратную строку.
-    Правило простое: не ставим пробел перед знаками препинания . , ! ? : ; ) ] % и т.п.
-    Ставим пробел перед открывающей скобкой если нужно.
-    """
+    """Простая склейка слов в предложение. Поднимаем первую букву и ставим точку, если нужно."""
     if not tokens:
         return ""
-    out = []
-    no_space_before = set('.,!?;:)]}%»"\'')
-    no_space_after = set('([{«"\'')
-    for i, t in enumerate(tokens):
-        if i == 0:
-            out.append(t)
-            continue
-        prev = out[-1]
-        # if token is punctuation that should stick to previous
-        if t in no_space_before:
-            out[-1] = prev + t
-        elif prev in no_space_after:
-            out[-1] = prev + t
-        else:
-            out.append(" " + t)
-    return "".join(out)
+    s = " ".join(tokens).strip()
+    if not s:
+        return ""
+    # Убираем возможные повторяющиеся пробелы (на всякий случай)
+    s = re.sub(r"\s+", " ", s)
+    # Capitalize first letter (unicode aware)
+    first = s[0].upper()
+    s = first + s[1:]
+    # Ensure final punctuation: поставим точку, если нет '.', '!', '?'
+    if s[-1] not in ".!?":
+        s = s + "."
+    return s
 
 def longest_common_prefix_len(a, b):
     """Длина общего префикса двух строк."""
@@ -420,13 +410,13 @@ def parse_args():
     ap = argparse.ArgumentParser(description="Markov joke generator (interactive).")
     ap.add_argument("--dataset", "-d", required=True, help="CSV dataset path (column 'text' with one joke per row).")
     ap.add_argument("--N", type=int, default=5, help="Maximum n-gram order (default 5).")
-    ap.add_argument("--threshold", type=int, default=5, help="Min transitions for using a state without backoff (default 5).")
+    ap.add_argument("--threshold", type=int, default=20, help="Min transitions for using a state without backoff (default 20).")
     ap.add_argument("--T", type=float, default=1.0, help="Temperature for sampling (default 1.0).")
     ap.add_argument("--k_check", type=int, default=6, help="Check steering every k tokens (default 6).")
     ap.add_argument("--L_recent", type=int, default=12, help="Length of recent window to check prompt presence (default 12).")
     ap.add_argument("--alpha", type=float, default=2.0, help="Steering boost multiplier (default 2.0).")
-    ap.add_argument("--p_force", type=float, default=0.15, help="Probability to force-select a thematic candidate (default 0.15).")
-    ap.add_argument("--lcp_threshold", type=float, default=0.4, help="LCP ratio threshold for considering words 'related' (default 0.4).")
+    ap.add_argument("--p_force", type=float, default=0.7, help="Probability to force-select a thematic candidate (default 0.7).")
+    ap.add_argument("--lcp_threshold", type=float, default=0.75, help="LCP ratio threshold for considering words 'related' (default 0.75).")
     ap.add_argument("--max_length", type=int, default=120, help="Max tokens in generated joke (default 120).")
     ap.add_argument("--min_length", type=int, default=15, help="Min tokens before allowing early stop (default 15).")
     ap.add_argument("--num", type=int, default=1, help="Number of jokes to generate per prompt (default 1).")
